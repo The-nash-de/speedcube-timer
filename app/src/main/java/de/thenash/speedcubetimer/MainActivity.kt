@@ -90,6 +90,10 @@ fun TimerScreen() {
                         return@awaitEachGesture
                     }
 
+                    if (timerState == TimerState.STOPPED) {
+                        elapsedTime = 0L
+                    }
+
                     timerState = TimerState.HOLDING
 
                     val releasedEarly = withTimeoutOrNull(500L) {
@@ -104,13 +108,7 @@ fun TimerScreen() {
                     } ?: false
 
                     if (releasedEarly) {
-                        timerState =
-                            if (elapsedTime > 0L) {
-                                TimerState.STOPPED
-                            } else {
-                                TimerState.IDLE
-                            }
-
+                        timerState = TimerState.IDLE
                         return@awaitEachGesture
                     }
 
@@ -123,7 +121,6 @@ fun TimerScreen() {
                         stillPressed = event.changes.any { it.pressed }
                     }
 
-                    elapsedTime = 0L
                     startTime = SystemClock.elapsedRealtime()
                     timerState = TimerState.RUNNING
                 }

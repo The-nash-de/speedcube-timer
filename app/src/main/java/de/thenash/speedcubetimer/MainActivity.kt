@@ -26,18 +26,31 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.room3.Room
 import de.thenash.speedcubetimer.ui.theme.SpeedcubeTimerTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val database = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java,
+            "speedcube_timer.db"
+        ).build()
+
+        val solveDao = database.solveDao()
+
         setContent {
             SpeedcubeTimerTheme {
-                TimerScreen()
+                TimerScreen(solveDao)
             }
         }
     }
@@ -52,7 +65,7 @@ private enum class TimerState {
 }
 
 @Composable
-fun TimerScreen() {
+fun TimerScreen(solveDao: SolveDao) {
     var timerState by remember { mutableStateOf(TimerState.IDLE) }
 
     var startTime by remember { mutableLongStateOf(0L) }
@@ -82,6 +95,15 @@ fun TimerScreen() {
                             SystemClock.elapsedRealtime() - startTime
 
                         timerState = TimerState.STOPPED
+
+                        val solve = Solve(
+                            timeMillis = elapsedTime,
+                            timestamp = System.currentTimeMillis()
+                        )
+
+                        CoroutineScope(Dispatchers.IO).launch {
+                            solveDao.insertSolve(solve)
+                        }
 
                         do {
                             val event = awaitPointerEvent()

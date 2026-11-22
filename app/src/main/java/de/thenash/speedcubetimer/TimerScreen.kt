@@ -1,10 +1,15 @@
 package de.thenash.speedcubetimer
+
 import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,12 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private enum class TimerState {
     IDLE,
@@ -36,10 +43,25 @@ private enum class TimerState {
 
 @Composable
 fun TimerScreen(solveDao: SolveDao) {
-    var timerState by remember { mutableStateOf(TimerState.IDLE) }
+    var timerState by remember {
+        mutableStateOf(TimerState.IDLE)
+    }
 
-    var startTime by remember { mutableLongStateOf(0L) }
-    var elapsedTime by remember { mutableLongStateOf(0L) }
+    var startTime by remember {
+        mutableLongStateOf(0L)
+    }
+
+    var elapsedTime by remember {
+        mutableLongStateOf(0L)
+    }
+
+    var solves by remember {
+        mutableStateOf<List<Solve>>(emptyList())
+    }
+
+    LaunchedEffect(Unit) {
+        solves = solveDao.getAllSolves()
+    }
 
     LaunchedEffect(timerState) {
         if (timerState == TimerState.RUNNING) {
@@ -51,6 +73,20 @@ fun TimerScreen(solveDao: SolveDao) {
     }
 
     val displayedTime = formatTime(elapsedTime)
+
+    val bestTime = solves.minOfOrNull {
+        it.timeMillis
+    }
+
+    val averageTime = if (solves.isNotEmpty()) {
+        solves.map {
+            it.timeMillis
+        }.average()
+    } else {
+        null
+    }
+
+    val recentSolves = solves.take(5)
 
     Box(
         modifier = Modifier
@@ -70,6 +106,8 @@ fun TimerScreen(solveDao: SolveDao) {
                             timeMillis = elapsedTime,
                             timestamp = System.currentTimeMillis()
                         )
+
+                        solves = listOf(solve) + solves
 
                         CoroutineScope(Dispatchers.IO).launch {
                             solveDao.insertSolve(solve)
@@ -93,7 +131,9 @@ fun TimerScreen(solveDao: SolveDao) {
 
                         while (!released) {
                             val event = awaitPointerEvent()
-                            released = event.changes.none { it.pressed }
+                            released = event.changes.none {
+                                it.pressed
+                            }
                         }
 
                         true
@@ -110,7 +150,9 @@ fun TimerScreen(solveDao: SolveDao) {
 
                     while (stillPressed) {
                         val event = awaitPointerEvent()
-                        stillPressed = event.changes.any { it.pressed }
+                        stillPressed = event.changes.any {
+                            it.pressed
+                        }
                     }
 
                     startTime = SystemClock.elapsedRealtime()
@@ -119,15 +161,98 @@ fun TimerScreen(solveDao: SolveDao) {
             }
     ) {
         if (timerState != TimerState.RUNNING) {
-            Text(
-                text = "Speedcube Timer",
-                color = Color.White,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Medium,
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 48.dp)
-            )
+                    .fillMaxWidth()
+                    .padding(
+                        start = 24.dp,
+                        top = 32.dp,
+                        end = 24.dp
+                    )
+            ) {
+                Text(
+                    text = "3×3 Würfel",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Text(
+                    text = "Scramble folgt",
+                    color = Color(0xFFA9A9AD),
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 14.dp)
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(
+                        start = 20.dp,
+                        end = 20.dp,
+                        bottom = 20.dp
+                    ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    StatLine(
+                        label = "Durchschnitt",
+                        value = averageTime?.let {
+                            formatTime(it.toLong())
+                        } ?: "--"
+                    )
+
+                    StatLine(
+                        label = "Bester",
+                        value = bestTime?.let {
+                            formatTime(it)
+                        } ?: "--"
+                    )
+
+                    StatLine(
+                        label = "Anzahl",
+                        value = solves.size.toString()
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = "Letzte Zeiten",
+                        color = Color(0xFFF2F2F2),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+
+                    if (recentSolves.isEmpty()) {
+                        Text(
+                            text = "--",
+                            color = Color(0xFFA9A9AD),
+                            fontSize = 15.sp
+                        )
+                    } else {
+                        recentSolves.forEach { solve ->
+                            Text(
+                                text = formatTime(solve.timeMillis),
+                                color = Color(0xFFD8D8DA),
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         Text(
@@ -140,6 +265,27 @@ fun TimerScreen(solveDao: SolveDao) {
             fontSize = 96.sp,
             fontWeight = FontWeight.Light,
             modifier = Modifier.align(Alignment.Center)
+        )
+    }
+}
+
+@Composable
+private fun StatLine(
+    label: String,
+    value: String
+) {
+    Row {
+        Text(
+            text = "$label: ",
+            color = Color(0xFFA9A9AD),
+            fontSize = 15.sp
+        )
+
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium
         )
     }
 }

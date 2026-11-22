@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,7 +32,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -59,8 +63,35 @@ fun TimerScreen(solveDao: SolveDao) {
         mutableStateOf<List<Solve>>(emptyList())
     }
 
+    var scramble by remember {
+        mutableStateOf("")
+    }
+
+    var isScrambleLoading by remember {
+        mutableStateOf(true)
+    }
+
+    val scope = rememberCoroutineScope()
+
+    fun generateNewScramble() {
+        if (isScrambleLoading) {
+            return
+        }
+
+        scope.launch {
+            isScrambleLoading = true
+
+            scramble = ScrambleGenerator.generate()
+
+            isScrambleLoading = false
+        }
+    }
+
     LaunchedEffect(Unit) {
         solves = solveDao.getAllSolves()
+
+        scramble = ScrambleGenerator.generate()
+        isScrambleLoading = false
     }
 
     LaunchedEffect(timerState) {
@@ -109,8 +140,15 @@ fun TimerScreen(solveDao: SolveDao) {
 
                         solves = listOf(solve) + solves
 
-                        CoroutineScope(Dispatchers.IO).launch {
+                        scope.launch(Dispatchers.IO) {
                             solveDao.insertSolve(solve)
+                        }
+
+                        isScrambleLoading = true
+
+                        scope.launch {
+                            scramble = ScrambleGenerator.generate()
+                            isScrambleLoading = false
                         }
 
                         do {
@@ -131,6 +169,7 @@ fun TimerScreen(solveDao: SolveDao) {
 
                         while (!released) {
                             val event = awaitPointerEvent()
+
                             released = event.changes.none {
                                 it.pressed
                             }
@@ -150,6 +189,7 @@ fun TimerScreen(solveDao: SolveDao) {
 
                     while (stillPressed) {
                         val event = awaitPointerEvent()
+
                         stillPressed = event.changes.any {
                             it.pressed
                         }
@@ -168,9 +208,9 @@ fun TimerScreen(solveDao: SolveDao) {
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .padding(
-                        start = 24.dp,
-                        top = 32.dp,
-                        end = 24.dp
+                        start = 20.dp,
+                        top = 28.dp,
+                        end = 20.dp
                     )
             ) {
                 Text(
@@ -180,13 +220,48 @@ fun TimerScreen(solveDao: SolveDao) {
                     fontWeight = FontWeight.SemiBold
                 )
 
-                Text(
-                    text = "Scramble folgt",
-                    color = Color(0xFFA9A9AD),
-                    fontSize = 16.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 14.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isScrambleLoading) {
+                            "Scramble wird geladen..."
+                        } else {
+                            scramble
+                        },
+                        color = if (isScrambleLoading) {
+                            Color(0xFFA9A9AD)
+                        } else {
+                            Color(0xFFF2F2F2)
+                        },
+                        fontSize = 18.sp,
+                        lineHeight = 25.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 36.dp)
+                    )
+
+                    IconButton(
+                        onClick = {
+                            generateNewScramble()
+                        },
+                        enabled = !isScrambleLoading
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Neuen Scramble erzeugen",
+                            tint = if (isScrambleLoading) {
+                                Color(0xFF66666A)
+                            } else {
+                                Color(0xFFD8D8DA)
+                            }
+                        )
+                    }
+                }
             }
 
             Row(

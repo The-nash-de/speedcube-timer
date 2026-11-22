@@ -4,7 +4,6 @@ import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +35,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.ceil
+import kotlin.math.sqrt
 
 private enum class TimerState {
     IDLE,
@@ -80,9 +81,7 @@ fun TimerScreen(solveDao: SolveDao) {
 
         scope.launch {
             isScrambleLoading = true
-
             scramble = ScrambleGenerator.generate()
-
             isScrambleLoading = false
         }
     }
@@ -97,7 +96,9 @@ fun TimerScreen(solveDao: SolveDao) {
     LaunchedEffect(timerState) {
         if (timerState == TimerState.RUNNING) {
             while (true) {
-                elapsedTime = SystemClock.elapsedRealtime() - startTime
+                elapsedTime =
+                    SystemClock.elapsedRealtime() - startTime
+
                 delay(10)
             }
         }
@@ -105,17 +106,40 @@ fun TimerScreen(solveDao: SolveDao) {
 
     val displayedTime = formatTime(elapsedTime)
 
-    val bestTime = solves.minOfOrNull {
+    val times = solves.map {
         it.timeMillis
     }
 
-    val averageTime = if (solves.isNotEmpty()) {
-        solves.map {
-            it.timeMillis
-        }.average()
+    val bestTime = times.minOrNull()
+
+    val averageTime = if (times.isNotEmpty()) {
+        times.average()
     } else {
         null
     }
+
+    val standardDeviation =
+        calculateTimerStandardDeviation(times)
+
+    val ao5 = calculateTimerAverage(
+        times = times,
+        count = 5
+    )
+
+    val ao12 = calculateTimerAverage(
+        times = times,
+        count = 12
+    )
+
+    val ao50 = calculateTimerAverage(
+        times = times,
+        count = 50
+    )
+
+    val ao100 = calculateTimerAverage(
+        times = times,
+        count = 100
+    )
 
     val recentSolves = solves.take(5)
 
@@ -153,7 +177,11 @@ fun TimerScreen(solveDao: SolveDao) {
 
                         do {
                             val event = awaitPointerEvent()
-                        } while (event.changes.any { it.pressed })
+                        } while (
+                            event.changes.any {
+                                it.pressed
+                            }
+                        )
 
                         return@awaitEachGesture
                     }
@@ -164,19 +192,22 @@ fun TimerScreen(solveDao: SolveDao) {
 
                     timerState = TimerState.HOLDING
 
-                    val releasedEarly = withTimeoutOrNull(500L) {
-                        var released = false
+                    val releasedEarly =
+                        withTimeoutOrNull(500L) {
+                            var released = false
 
-                        while (!released) {
-                            val event = awaitPointerEvent()
+                            while (!released) {
+                                val event =
+                                    awaitPointerEvent()
 
-                            released = event.changes.none {
-                                it.pressed
+                                released =
+                                    event.changes.none {
+                                        it.pressed
+                                    }
                             }
-                        }
 
-                        true
-                    } ?: false
+                            true
+                        } ?: false
 
                     if (releasedEarly) {
                         timerState = TimerState.IDLE
@@ -188,20 +219,25 @@ fun TimerScreen(solveDao: SolveDao) {
                     var stillPressed = true
 
                     while (stillPressed) {
-                        val event = awaitPointerEvent()
+                        val event =
+                            awaitPointerEvent()
 
-                        stillPressed = event.changes.any {
-                            it.pressed
-                        }
+                        stillPressed =
+                            event.changes.any {
+                                it.pressed
+                            }
                     }
 
-                    startTime = SystemClock.elapsedRealtime()
+                    startTime =
+                        SystemClock.elapsedRealtime()
+
                     timerState = TimerState.RUNNING
                 }
             }
     ) {
         if (timerState != TimerState.RUNNING) {
 
+            // Kopfbereich
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
@@ -264,69 +300,114 @@ fun TimerScreen(solveDao: SolveDao) {
                 }
             }
 
-            Row(
+            // Letzte Zeiten: eigener Block rechts, deutlich höher
+            Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
+                    .align(Alignment.BottomEnd)
                     .padding(
-                        start = 20.dp,
                         end = 20.dp,
-                        bottom = 20.dp
+                        bottom = 142.dp
                     ),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                horizontalAlignment = Alignment.End
             ) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    StatLine(
-                        label = "Durchschnitt",
-                        value = averageTime?.let {
-                            formatTime(it.toLong())
-                        } ?: "--"
-                    )
+                Text(
+                    text = "Letzte Zeiten",
+                    color = Color(0xFFF2F2F2),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
 
-                    StatLine(
-                        label = "Bester",
-                        value = bestTime?.let {
-                            formatTime(it)
-                        } ?: "--"
-                    )
-
-                    StatLine(
-                        label = "Anzahl",
-                        value = solves.size.toString()
-                    )
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
+                if (recentSolves.isEmpty()) {
                     Text(
-                        text = "Letzte Zeiten",
-                        color = Color(0xFFF2F2F2),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(bottom = 3.dp)
+                        text = "--",
+                        color = Color(0xFFA9A9AD),
+                        fontSize = 14.sp
                     )
-
-                    if (recentSolves.isEmpty()) {
+                } else {
+                    recentSolves.forEach { solve ->
                         Text(
-                            text = "--",
-                            color = Color(0xFFA9A9AD),
-                            fontSize = 15.sp
+                            text = formatTime(solve.timeMillis),
+                            color = Color(0xFFD8D8DA),
+                            fontSize = 14.sp
                         )
-                    } else {
-                        recentSolves.forEach { solve ->
-                            Text(
-                                text = formatTime(solve.timeMillis),
-                                color = Color(0xFFD8D8DA),
-                                fontSize = 15.sp
-                            )
-                        }
                     }
                 }
+            }
+
+            // Basiswerte: eigener Block links unten
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(
+                        start = 20.dp,
+                        bottom = 18.dp
+                    )
+            ) {
+                StatLine(
+                    label = "Abweichung",
+                    value = standardDeviation?.let {
+                        formatTime(it.toLong())
+                    } ?: "--"
+                )
+
+                StatLine(
+                    label = "Durchschnitt",
+                    value = averageTime?.let {
+                        formatTime(it.toLong())
+                    } ?: "--"
+                )
+
+                StatLine(
+                    label = "Bester",
+                    value = bestTime?.let {
+                        formatTime(it)
+                    } ?: "--"
+                )
+
+                StatLine(
+                    label = "Anzahl",
+                    value = solves.size.toString()
+                )
+            }
+
+            // Averages: eigener Block rechts unten
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(
+                        end = 20.dp,
+                        bottom = 18.dp
+                    ),
+                horizontalAlignment = Alignment.End
+            ) {
+                StatLine(
+                    label = "Ao5",
+                    value = ao5?.let {
+                        formatTime(it.toLong())
+                    } ?: "--"
+                )
+
+                StatLine(
+                    label = "Ao12",
+                    value = ao12?.let {
+                        formatTime(it.toLong())
+                    } ?: "--"
+                )
+
+                StatLine(
+                    label = "Ao50",
+                    value = ao50?.let {
+                        formatTime(it.toLong())
+                    } ?: "--"
+                )
+
+                StatLine(
+                    label = "Ao100",
+                    value = ao100?.let {
+                        formatTime(it.toLong())
+                    } ?: "--"
+                )
             }
         }
 
@@ -339,7 +420,9 @@ fun TimerScreen(solveDao: SolveDao) {
             },
             fontSize = 96.sp,
             fontWeight = FontWeight.Light,
-            modifier = Modifier.align(Alignment.Center)
+            modifier = Modifier.align(
+                Alignment.Center
+            )
         )
     }
 }
@@ -353,19 +436,64 @@ private fun StatLine(
         Text(
             text = "$label: ",
             color = Color(0xFFA9A9AD),
-            fontSize = 15.sp
+            fontSize = 14.sp
         )
 
         Text(
             text = value,
             color = Color.White,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Medium
         )
     }
 }
 
-private fun formatTime(milliseconds: Long): String {
-    val seconds = milliseconds / 1000.0
+private fun calculateTimerAverage(
+    times: List<Long>,
+    count: Int
+): Double? {
+    if (times.size < count) {
+        return null
+    }
+
+    val recentTimes = times
+        .take(count)
+        .sorted()
+
+    val trimCount =
+        ceil(count * 0.05).toInt()
+
+    val trimmedTimes = recentTimes
+        .drop(trimCount)
+        .dropLast(trimCount)
+
+    return trimmedTimes.average()
+}
+
+private fun calculateTimerStandardDeviation(
+    times: List<Long>
+): Double? {
+    if (times.isEmpty()) {
+        return null
+    }
+
+    val average = times.average()
+
+    val variance = times
+        .map { time ->
+            val difference = time - average
+            difference * difference
+        }
+        .average()
+
+    return sqrt(variance)
+}
+
+private fun formatTime(
+    milliseconds: Long
+): String {
+    val seconds =
+        milliseconds / 1000.0
+
     return "%.2f".format(seconds)
 }
